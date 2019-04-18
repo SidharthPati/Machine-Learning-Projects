@@ -1,9 +1,25 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[2]:
+
+
 '''
 Comparing single layer MLP with deep MLP (using TensorFlow)
 '''
 
 import numpy as np
+import scipy.io as spio
+from scipy.optimize import minimize
+from scipy.io import loadmat
+from math import sqrt
 import pickle
+import time
+import matplotlib.pyplot as plt
+
+
+# In[3]:
+
 
 # Do not change this
 def initializeWeights(n_in,n_out):
@@ -22,19 +38,185 @@ def initializeWeights(n_in,n_out):
     return W
 
 
+# In[4]:
+
 
 # Replace this with your sigmoid implementation
 def sigmoid(z):
-    
-    
-# Replace this with your nnObjFunction implementation
+    """
+    Calculate and return sigma value using the sigmoid function given the value of z
+    """
+    return np.divide(1.0, 1.0 + np.exp(-1.0*z))
+
+
+# In[5]:
+
+
 def nnObjFunction(params, *args):
+    """% nnObjFunction computes the value of objective function (negative log 
+    %   likelihood error function with regularization) given the parameters 
+    %   of Neural Networks, thetraining data, their corresponding training 
+    %   labels and lambda - regularization hyper-parameter.
+
+    % Input:
+    % params: vector of weights of 2 matrices w1 (weights of connections from
+    %     input layer to hidden layer) and w2 (weights of connections from
+    %     hidden layer to output layer) where all of the weights are contained
+    %     in a single vector.
+    % n_input: number of node in input layer (not include the bias node)
+    % n_hidden: number of node in hidden layer (not include the bias node)
+    % n_class: number of node in output layer (number of classes in
+    %     classification problem
+    % training_data: matrix of training data. Each row of this matrix
+    %     represents the feature vector of a particular image
+    % training_label: the vector of truth label of training images. Each entry
+    %     in the vector represents the truth label of its corresponding image.
+    % lambda: regularization hyper-parameter. This value is used for fixing the
+    %     overfitting problem.
+       
+    % Output: 
+    % obj_val: a scalar value representing value of error function
+    % obj_grad: a SINGLE vector of gradient value of error function
+    % NOTE: how to compute obj_grad
+    % Use backpropagation algorithm to compute the gradient of error function
+    % for each weights in weight matrices.
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    % reshape 'params' vector into 2 matrices of weight w1 and w2
+    % w1: matrix of weights of connections from input layer to hidden layers.
+    %     w1(i, j) represents the weight of connection from unit j in input 
+    %     layer to unit i in hidden layer.
+    % w2: matrix of weights of connections from hidden layer to output layers.
+    %     w2(i, j) represents the weight of connection from unit j in hidden 
+    %     layer to unit i in output layer."""
+
+    n_input, n_hidden, n_class, training_data, training_label, lambdaval = args
+
+    w1 = params[0:n_hidden * (n_input + 1)].reshape((n_hidden, (n_input + 1)))
+    w2 = params[(n_hidden * (n_input + 1)):].reshape((n_class, (n_hidden + 1)))
+    obj_val = 0
+
+    # Your code here
+    #
+    #feedforward propogation
+    #adding bias to the input layer
+    # Adding Bias to training data
+    temp_trainData=np.concatenate((np.transpose(training_data),np.ones(shape=(1,np.transpose(training_data).shape[1]), dtype=int))) # Adding bias
+    # print(temp_trainData)
+    #Eq 1 in Assignment doc
+    input_hidden=np.dot(w1,temp_trainData) 
+    # Eq 2 in Assignment doc 
+    input_hidden_output=sigmoid(input_hidden)
+    input_hidden_output_bias=np.ones(shape=(1,input_hidden_output.shape[1]), dtype=int) # Bias in hidden layer
+    input_hidden_output=np.concatenate((input_hidden_output,input_hidden_output_bias)) # Add bias
+    # Eq 3 from Assignment doc
+    hidden_output=np.dot(w2,input_hidden_output)
+    # Eq 4 from Assignment doc
+    #dimension of output_layer_output=
+    output_sigmoid=sigmoid(hidden_output)
+       
+    #basically create vector of 50000*10 indicating one wherever the label is true
+    # training_label_size = np.size(training_label)
+    # print(training_label_size)
+    temp_list = np.zeros((training_label.shape[0], n_class), int)
+    i = 0
+    for train_label in training_label:
+        temp_list[i][int(train_label)] = 1
+        i += 1
+    labels = temp_list.transpose()#10*50000
     
-# Replace this with your nnPredict implementation
-def nnPredict(w1,w2,data):
+    #Eq 5 from Assignment doc to calculate log likelihood of error
+    error = labels*np.log(output_sigmoid) + (1 - labels)*np.log(1 - output_sigmoid) 
+    #output_layer is the output from equation 4
+    #Eq 6 from Assignment doc
+    count=training_data.shape[0]
+    lle = (-1)*(np.sum(error[:])/count)
+    #Eq 8 from Assignment doc
+    derivative_error= np.dot((output_sigmoid - labels),input_hidden_output.transpose())
+    #Eq 12 from Assignment doc
+    derivative_err_func_hidden =  np.dot(w2.transpose(), 
+                                         output_sigmoid - labels)*(input_hidden_output*(1 - input_hidden_output))
+    
+    #removing the bias
+    w1_error = np.dot(derivative_err_func_hidden , temp_trainData.transpose())[:-1,:]
+    
+    #Eq 13 from Assignment doc
+    obj_val = lle + ((np.sum(w1**2)+np.sum(w2**2))/(2*count))*lambdaval
+    # print("obj val",obj_val)
+    
+    #Eq 16 from Assignment doc
+    grad1 = (w1_error + lambdaval*w1)/count
+    grad2 = (derivative_error + lambdaval*w2)/count 
+    
+    # print(input_hidden)
+    # print(input_hidden_output_bias)
+    # print(input_hidden_output)
+    # print(output_sigmoid)
+    # print(output_sigmoid.shape)
+
+    # Make sure you reshape the gradient matrices to a 1D array. for instance if your gradient matrices are grad_w1 and grad_w2
+    # you would use code similar to the one below to create a flat array
+    # obj_grad = np.concatenate((grad_w1.flatten(), grad_w2.flatten()),0)
+    obj_grad = np.array([])
+    # Reference for flatten: https://docs.scipy.org/doc/numpy/reference/generated/numpy.ndarray.flatten.html
+    obj_grad = np.concatenate((grad1.flatten(),grad2.flatten()), 0)
+    
+    return (obj_val, obj_grad)
+
+
+# In[6]:
+
+
+def nnPredict(w1, w2, data):
+    """% nnPredict predicts the label of data given the parameter w1, w2 of Neural
+    % Network.
+
+    % Input:
+    % w1: matrix of weights of connections from input layer to hidden layers.
+    %     w1(i, j) represents the weight of connection from unit i in input 
+    %     layer to unit j in hidden layer.
+    % w2: matrix of weights of connections from hidden layer to output layers.
+    %     w2(i, j) represents the weight of connection from unit i in input 
+    %     layer to unit j in hidden layer.
+    % data: matrix of data. Each row of this matrix represents the feature 
+    %       vector of a particular image
+       
+    % Output: 
+    % label: a column vector of predicted labels"""
+
+    labels = np.array([])
+    # Your code here
+    # Feed forward begins
+    training_bias=np.ones(shape=(1,np.transpose(data).shape[1]), dtype=int)
+    training_data=np.concatenate((np.transpose(data),training_bias))
+    # print(training_data)
+    # Neural Network Logic begins here
+    #Eq 2 from Assignment doc
+    hidden_output=sigmoid(np.dot(w1,training_data))
+    hidden_layer_bias=np.ones(shape=(1,hidden_output.shape[1]), dtype=int)
+    # Adding bias
+    hidden_layer_output=np.concatenate((hidden_output, hidden_layer_bias))
+    #Eq 4 from Assignment doc
+    output_layer_output=sigmoid(np.dot(w2,hidden_layer_output))
+    # Feed forward done
+    #     print("inside nnpredict method. print output after feed forward")
+    #     print("training_data")
+    #     print(training_data)
+    #     print("hidden_layer_output")
+    #     print(hidden_layer_output)
+    #     print("output_layer_output")
+    #     print(output_layer_output)
+    labels = np.argmax(output_layer_output,axis=0)
+    return labels
+
+
+# In[7]:
+
 
 # Do not change this
 def preprocess():
+    # Remove this
+    print("preprocess() started")
     pickle_obj = pickle.load(file=open('face_all.pickle', 'rb'))
     features = pickle_obj['Features']
     labels = pickle_obj['Labels']
@@ -48,8 +230,17 @@ def preprocess():
     test_y = labels[23765:]
     return train_x, train_y, valid_x, valid_y, test_x, test_y
 
+
+# In[8]:
+
+
 """**************Neural Network Script Starts here********************************"""
 train_data, train_label, validation_data, validation_label, test_data, test_label = preprocess()
+
+
+# In[9]:
+
+
 #  Train Neural Network
 # set the number of nodes in input unit (not including bias unit)
 n_input = train_data.shape[1]
@@ -86,3 +277,10 @@ print('\n Validation set Accuracy:' + str(100*np.mean((predicted_label == valida
 predicted_label = nnPredict(w1,w2,test_data)
 #find the accuracy on Validation Dataset
 print('\n Test set Accuracy:' +  str(100*np.mean((predicted_label == test_label).astype(float))) + '%')
+
+
+# In[ ]:
+
+
+
+

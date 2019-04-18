@@ -1,8 +1,20 @@
+
+# coding: utf-8
+
+# In[10]:
+
+
 import numpy as np
+import scipy.io as spio
 from scipy.optimize import minimize
 from scipy.io import loadmat
 from math import sqrt
-import os
+import pickle
+import time
+import matplotlib.pyplot as plt
+
+
+# In[2]:
 
 
 def initializeWeights(n_in, n_out):
@@ -22,11 +34,14 @@ def initializeWeights(n_in, n_out):
     return W
 
 
-def sigmoid(z):
-    """# Notice that z can be a scalar, a vector or a matrix
-    # return the sigmoid of input z"""
+# In[3]:
 
-    return  # your code here
+
+def sigmoid(z):
+    return np.divide(1.0, 1.0 + np.exp(-1.0*z))
+
+
+# In[4]:
 
 
 def preprocess():
@@ -51,10 +66,12 @@ def preprocess():
      Some suggestions for preprocessing step:
      - feature selection"""
 
-    mat = loadmat('mnist_all.mat')  # loads the MAT object as a Dictionary
+    # Reference for preprocess() - Prof. Varun Chandola's Lecture - https://youtu.be/XEZbGGqn4yA
+    mat = spio.loadmat('mnist_all.mat')  # loads the MAT object as a Dictionary
 
     # Split the training sets into two sets of 50000 randomly sampled training examples and 10000 validation examples. 
     # Your code here.
+    
     # print(mat['test0'].shape)
     # Column size obtained: 784
 
@@ -106,15 +123,19 @@ def preprocess():
         elif 'test' in key:
             val = mat.get(key)
             val_range = range(val.shape[0])
+            
             # randomize val_range
             randomized_val = np.random.permutation(val_range)
+            
             # fetch label which is at the end of the string. Ex: train0, train1 etc.
             label = key[-1]
+            
             # Length of current training set
             test_val_length = len(val)
 
             # Get the testing data set
             test_data_initial[test_data_length: test_data_length+test_val_length] = val[randomized_val]
+            
             # Map the above data to corresponding labels
             test_label_initial[test_data_length: test_data_length+test_val_length] = label
             test_data_length += test_val_length
@@ -133,7 +154,7 @@ def preprocess():
     validation_data = validation_data_initial[randomized_validation]
     validation_data = np.double(validation_data)
     validation_data = validation_data/255.0
-    validation_label = validation_data_initial[randomized_validation]
+    validation_label = validation_label_initial[randomized_validation]
 
     # Normalized testing data to be returned
     test_size = range(test_data_initial.shape[0])
@@ -143,12 +164,20 @@ def preprocess():
     test_data = test_data/255.0
     test_label = test_label_initial[randomized_test]
 
-    # Feature selection
-    # Your code here.
+    # Feature selection function call
+    
+    #     print('preprocess done')
+    #     print(train_data.shape)
+    #     print(train_label.shape)
+    #     print(validation_data.shape)
+    #     print(validation_label.shape)
+    #     print(test_data.shape)
+    #     print(test_label.shape)
+    train_data, validation_data, test_data, selected_features = featureSelection(train_data, validation_data, test_data)
+    return train_data, train_label, validation_data, validation_label, test_data, test_label, selected_features
 
-    print('preprocess done')
 
-    return train_data, train_label, validation_data, validation_label, test_data, test_label
+# In[5]:
 
 
 def nnObjFunction(params, *args):
@@ -197,19 +226,96 @@ def nnObjFunction(params, *args):
 
     # Your code here
     #
-    #
-    #
-    #
-    #
-
-
+    #feedforward propogation
+    #adding bias to the input layer
+    # Adding Bias to training data
+    temp_trainData=np.concatenate((np.transpose(training_data),np.ones(shape=(1,np.transpose(training_data).shape[1]), dtype=int))) # Adding bias
+    # print(temp_trainData)
+    #Eq 1 in Assignment doc
+    input_hidden=np.dot(w1,temp_trainData) 
+    # Eq 2 in Assignment doc 
+    input_hidden_output=sigmoid(input_hidden)
+    input_hidden_output_bias=np.ones(shape=(1,input_hidden_output.shape[1]), dtype=int) # Bias in hidden layer
+    input_hidden_output=np.concatenate((input_hidden_output,input_hidden_output_bias)) # Add bias
+    # Eq 3 from Assignment doc
+    hidden_output=np.dot(w2,input_hidden_output)
+    # Eq 4 from Assignment doc
+    #dimension of output_layer_output=
+    output_sigmoid=sigmoid(hidden_output)
+       
+    #basically create vector of 50000*10 indicating one wherever the label is true
+    # training_label_size = np.size(training_label)
+    # print(training_label_size)
+    temp_list = np.zeros((training_label.shape[0], n_class), int)
+    i = 0
+    for train_label in training_label:
+        temp_list[i][int(train_label)] = 1
+        i += 1
+    labels = temp_list.transpose()#10*50000
+    
+    #Eq 5 from Assignment doc to calculate log likelihood of error
+    error = labels*np.log(output_sigmoid) + (1 - labels)*np.log(1 - output_sigmoid) 
+    #output_layer is the output from equation 4
+    #Eq 6 from Assignment doc
+    count=training_data.shape[0]
+    lle = (-1)*(np.sum(error[:])/count)
+    #Eq 8 from Assignment doc
+    derivative_error= np.dot((output_sigmoid - labels),input_hidden_output.transpose())
+    #Eq 12 from Assignment doc
+    derivative_err_func_hidden =  np.dot(w2.transpose(), 
+                                         output_sigmoid - labels)*(input_hidden_output*(1 - input_hidden_output))
+    
+    #removing the bias
+    w1_error = np.dot(derivative_err_func_hidden , temp_trainData.transpose())[:-1,:]
+    
+    #Eq 13 from Assignment doc
+    obj_val = lle + ((np.sum(w1**2)+np.sum(w2**2))/(2*count))*lambdaval
+    # print("obj val",obj_val)
+    
+    #Eq 16 from Assignment doc
+    grad1 = (w1_error + lambdaval*w1)/count
+    grad2 = (derivative_error + lambdaval*w2)/count 
+    
+    # print(input_hidden)
+    # print(input_hidden_output_bias)
+    # print(input_hidden_output)
+    # print(output_sigmoid)
+    # print(output_sigmoid.shape)
 
     # Make sure you reshape the gradient matrices to a 1D array. for instance if your gradient matrices are grad_w1 and grad_w2
     # you would use code similar to the one below to create a flat array
     # obj_grad = np.concatenate((grad_w1.flatten(), grad_w2.flatten()),0)
     obj_grad = np.array([])
-
+    # Reference for flatten: https://docs.scipy.org/doc/numpy/reference/generated/numpy.ndarray.flatten.html
+    obj_grad = np.concatenate((grad1.flatten(),grad2.flatten()), 0)
+    
     return (obj_val, obj_grad)
+
+
+def featureSelection(train_data, validation_data, test_data):
+    """
+    Method to remove redundant features. We take help of set() to fetch unique values in a list.
+    When the length of the set is 1 or less, then we eliminate these values
+    """
+    selected_features = list()
+    repeating_vals = list()
+    for index_iter in range(train_data.shape[1]):
+        temp_list = list(train_data[:,index_iter])
+        set1 = set(temp_list)
+        if len(set1) <= 1:
+            repeating_vals.append(index_iter)
+        else:
+            selected_features.append(index_iter)
+    # Delete rows found in repeating values list from training data, validation data and test data
+    # This completes Feature selection
+    train_data=np.delete(train_data,repeating_vals,axis=1)
+    validation_data=np.delete(validation_data,repeating_vals,axis=1)
+    test_data=np.delete(test_data,repeating_vals,axis=1)
+    
+    return train_data, validation_data, test_data, selected_features
+
+
+# In[13]:
 
 
 def nnPredict(w1, w2, data):
@@ -231,33 +337,35 @@ def nnPredict(w1, w2, data):
 
     labels = np.array([])
     # Your code here
-
+    # Feed forward begins
+    training_bias=np.ones(shape=(1,np.transpose(data).shape[1]), dtype=int)
+    training_data=np.concatenate((np.transpose(data),training_bias))
+    # print(training_data)
+    # Neural Network Logic begins here
+    #Eq 2 from Assignment doc
+    hidden_output=sigmoid(np.dot(w1,training_data))
+    hidden_layer_bias=np.ones(shape=(1,hidden_output.shape[1]), dtype=int)
+    # Adding bias
+    hidden_layer_output=np.concatenate((hidden_output, hidden_layer_bias))
+    #Eq 4 from Assignment doc
+    output_layer_output=sigmoid(np.dot(w2,hidden_layer_output))
+    # Feed forward done
+    #     print("inside nnpredict method. print output after feed forward")
+    #     print("training_data")
+    #     print(training_data)
+    #     print("hidden_layer_output")
+    #     print(hidden_layer_output)
+    #     print("output_layer_output")
+    #     print(output_layer_output)
+    labels = np.argmax(output_layer_output,axis=0)
     return labels
 
 
-"""**************Neural Network Script Starts here********************************"""
-
-train_data, train_label, validation_data, validation_label, test_data, test_label = preprocess()
-print("Pre processing done")
-print("Training data: ")
-print(train_data.shape)
-print(train_data)
-print("Training labels: ")
-print(train_label)
-print("Validation data: ")
-print(validation_data.shape)
-print(validation_data)
-print("Validation labels: ")
-print(validation_label)
-print("Test data: ")
-print(test_data.shape)
-print(test_data)
-print("Test labels: ")
-print(test_label)
-file_name = os.path.expanduser('~/Desktop/preprocessing_output.txt')
-np.savetxt(file_name, train_data)
+# In[16]:
 
 
+train_data, train_label, validation_data, validation_label, test_data, test_label, final_features_list = preprocess()
+print("Pre Processing done!")
 #  Train Neural Network
 
 # set the number of nodes in input unit (not including bias unit)
@@ -277,7 +385,7 @@ initial_w2 = initializeWeights(n_hidden, n_class)
 initialWeights = np.concatenate((initial_w1.flatten(), initial_w2.flatten()), 0)
 
 # set the regularization hyper-parameter
-lambdaval = 0
+lambdaval = 15
 
 args = (n_input, n_hidden, n_class, train_data, train_label, lambdaval)
 
@@ -297,6 +405,10 @@ w1 = nn_params.x[0:n_hidden * (n_input + 1)].reshape((n_hidden, (n_input + 1)))
 w2 = nn_params.x[(n_hidden * (n_input + 1)):].reshape((n_class, (n_hidden + 1)))
 
 # Test the computed parameters
+# print("before calling predict function")
+# print(w1)
+# print(w2)
+# print(train_data)
 
 predicted_label = nnPredict(w1, w2, train_data)
 
@@ -315,3 +427,6 @@ predicted_label = nnPredict(w1, w2, test_data)
 # find the accuracy on Validation Dataset
 
 print('\n Test set Accuracy:' + str(100 * np.mean((predicted_label == test_label).astype(float))) + '%')
+
+pickle_list = [final_features_list, 50, w1, w2, 15]
+pickle.dump(pickle_list, open('params.pickle', 'wb'))
